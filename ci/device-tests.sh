@@ -5,6 +5,13 @@ set -uo pipefail
 apk="$1"
 results="$2"
 screen="$3"     # cover-screen or inner-screen
+suite="${4:-app-walk}"   # app-walk, first-run or widgets: each runs on its own emulator in parallel
+case "$suite" in
+  app-walk)  tests=com.pandyabhavik.pedometer.ScreensTest#everyScreen ;;
+  first-run) tests=com.pandyabhavik.pedometer.ScreensTest#firstRun ;;
+  widgets)   tests=com.pandyabhavik.pedometer.WidgetsTest ;;
+  *) echo "Unknown suite $suite"; exit 2 ;;
+esac
 pkg=com.pandyabhavik.pedometer
 mkdir -p "$results"
 status=0
@@ -24,6 +31,7 @@ else
 fi
 sleep 3
 
+if [ "$suite" = app-walk ]; then
 echo "== Smoke test of the release APK =="
 adb logcat -c
 adb install -r "$apk"
@@ -49,14 +57,15 @@ else
 fi
 adb logcat -d > "$results/logcat-release.txt"
 adb uninstall $pkg >/dev/null || true
+fi
 
 # ScreensTest walks the app; WidgetsTest hosts every home-screen widget itself and screenshots them
 # (30-32-widgets-*). The widget bind grant it needs is given from inside the test: Gradle installs the
 # app afresh here (it was uninstalled above), so a grant from this script would have nothing to stick to.
-echo "== Screen and widget tests ($screen) =="
+echo "== $suite tests ($screen) =="
 adb logcat -c
 adb shell rm -rf /sdcard/Download/pedometer-screens
-if ! ./gradlew --no-daemon connectedDebugAndroidTest; then status=1; fi
+if ! ./gradlew --no-daemon connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=$tests"; then status=1; fi
 mkdir -p "$results/$screen"
 adb pull /sdcard/Download/pedometer-screens/. "$results/$screen/" >/dev/null || true
 cp -r app/build/reports/androidTests/connected "$results/$screen/report" 2>/dev/null || true
