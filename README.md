@@ -5,6 +5,12 @@ hardware step sensor, merges them with a Fitbit (or any wearable) through Health
 double counting, and writes the phone's steps back to Health Connect only for times the wearable
 wasn't worn.
 
+<p>
+  <img src="docs/screenshots/cover-history.png" width="200" alt="History on the cover screen">
+  <img src="docs/screenshots/cover-awards.png" width="200" alt="Awards on the cover screen">
+  <img src="docs/screenshots/inner-widgets.png" width="356" alt="Home screen widgets on the inner screen">
+</p>
+
 - `core/`: the rules, in plain Kotlin with unit tests: 5-minute slot merging and dedupe, the
   Health Connect write filter, step counter reboots, streaks, badges, CSV.
 - `app/`: the Android app: Compose UI (cover and inner screen layouts), Room, Hilt, step
