@@ -24,7 +24,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -34,9 +37,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
 /**
- * Reads the phone's hardware step counter. The chip keeps its own running total all day while the phone
- * sleeps, so nothing has to stay running: a read every 15 minutes (and live while the app is open) picks
- * up every step since the last one. No always-on service, so no notification.
+ * The phone's own steps, with no always-on service and so no notification. Google Play's step recording
+ * ([PlayRecording]) is used where the phone has it, which is nearly every phone with Play. Otherwise the
+ * hardware step counter is read every 15 minutes and live while the app is open; it keeps a running total,
+ * though Android may hold back readings from a closed app unless its battery use is Unrestricted.
  */
 object StepReader {
     private const val TAG = "StepReader"
@@ -53,6 +57,16 @@ object StepReader {
     suspend fun readNow(context: Context): Boolean {
         val app = context.applicationContext
         if (!canRead(app)) return false
+        if (PlayRecording.sync(app)) {
+            // A later fallback to the step chip starts from a fresh baseline instead of counting this span again.
+            AppEntryPoint.get(app).settings().clearCheckpoint()
+            Widgets.refresh(app)
+            return true
+        }
+        return readSensor(app)
+    }
+
+    private suspend fun readSensor(app: Context): Boolean {
         val manager = app.getSystemService(SensorManager::class.java) ?: return false
         val sensor = manager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) ?: return false
         val reading = withTimeoutOrNull(10_000) {
@@ -116,9 +130,25 @@ object StepReader {
             SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e -> Log.w(TAG, "Counting error", e) },
         )
         private var readings: Channel<CounterReading>? = null
+        private var polling: Job? = null
 
-        override fun onStart(owner: LifecycleOwner) {
-            if (!canRead(app)) return
+        override fun onStart(owner: LifecycleOwner) = begin()
+
+        // The permission dialog only pauses the screen: start here too once motion access was just granted.
+        override fun onResume(owner: LifecycleOwner) = begin()
+
+        private fun begin() {
+            if (readings != null || polling != null || !canRead(app)) return
+            if (PlayRecording.available(app)) {
+                // Play's record is read every 30 seconds while the app is on screen.
+                polling = scope.launch {
+                    while (isActive) {
+                        if (PlayRecording.sync(app)) Widgets.refresh(app)
+                        delay(30_000)
+                    }
+                }
+                return
+            }
             val manager = app.getSystemService(SensorManager::class.java) ?: return
             val sensor = manager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) ?: return
             // In the order the sensor sent them: out of order, a newer total could be recorded before an older one.
@@ -129,6 +159,8 @@ object StepReader {
         }
 
         override fun onStop(owner: LifecycleOwner) {
+            polling?.cancel()
+            polling = null
             app.getSystemService(SensorManager::class.java)?.unregisterListener(this)
             readings?.close()
             readings = null

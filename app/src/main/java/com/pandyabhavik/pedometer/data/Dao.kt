@@ -26,6 +26,16 @@ abstract class StepDao {
         upsertPhone(updated)
     }
 
+    @Query("DELETE FROM phone_slots WHERE slotStart >= :from AND slotStart < :to")
+    abstract suspend fun clearPhoneSlots(from: Long, to: Long)
+
+    /** Puts Google Play's recorded steps for [from, to) in place of whatever the phone slots held there. */
+    @Transaction
+    open suspend fun replacePhoneSteps(from: Long, to: Long, slots: Map<Long, Long>) {
+        clearPhoneSlots(from, to)
+        upsertPhone(slots.filterValues { it > 0 }.map { (slot, steps) -> PhoneSlot(slot, steps) })
+    }
+
     @Query("SELECT MIN(slotStart) FROM phone_slots")
     abstract suspend fun firstPhoneSlot(): Long?
 

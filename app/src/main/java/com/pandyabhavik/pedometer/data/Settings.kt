@@ -148,6 +148,15 @@ class SettingsStore @Inject constructor(@ApplicationContext context: Context) {
         return CounterCheckpoint(counter, p[K.cpAt] ?: 0, p[K.cpBoot] ?: 0)
     }
 
+    /** Forgets the step chip's last reading, so the next one is a fresh baseline. */
+    suspend fun clearCheckpoint() {
+        store.edit {
+            it.remove(K.cpCounter)
+            it.remove(K.cpAt)
+            it.remove(K.cpBoot)
+        }
+    }
+
     suspend fun saveCheckpoint(cp: CounterCheckpoint) {
         store.edit {
             it[K.cpCounter] = cp.counter

@@ -34,11 +34,12 @@ object StepCounterRules {
             return CounterStep(0, reading.atMillis, reading.atMillis, next)
         }
         // Readings come from more than one place (the 15-minute read, the live count while the app is open).
-        // An older reading that arrives after a newer one is lower without a reboot: ignore it.
-        if (reading.bootCount == previous.bootCount && reading.counter < previous.counter && reading.atMillis <= previous.atMillis) {
+        // The counter only goes down at a reboot, which changes the boot count: a lower total in the same
+        // boot is an older reading that arrived late. Ignore it rather than count the whole total again.
+        if (reading.bootCount == previous.bootCount && reading.counter <= previous.counter) {
             return CounterStep(0, previous.atMillis, previous.atMillis, previous)
         }
-        val rebooted = reading.bootCount != previous.bootCount || reading.counter < previous.counter
+        val rebooted = reading.bootCount != previous.bootCount
         val steps: Long
         val from: Long
         if (rebooted) {
