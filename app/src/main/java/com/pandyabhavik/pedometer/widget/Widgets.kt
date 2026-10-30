@@ -270,12 +270,29 @@ private fun Color.toArgb(): Int = android.graphics.Color.argb(
     (alpha * 255).toInt(), (red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt(),
 )
 
-private fun style(color: Color, size: Int, weight: FontWeight = FontWeight.Normal, align: TextAlign = TextAlign.Start) =
-    TextStyle(color = ColorProvider(color), fontSize = size.sp, fontWeight = weight, textAlign = align)
+private fun style(color: Color, size: Number, weight: FontWeight = FontWeight.Normal, align: TextAlign = TextAlign.Start) =
+    TextStyle(color = ColorProvider(color), fontSize = size.toFloat().sp, fontWeight = weight, textAlign = align)
+
+/**
+ * How much larger than its design size ([w] x [h] dp) the widget is on the home screen. Text, rings and
+ * bars are multiplied by it, so a widget stretched to twice the size shows everything twice as big
+ * instead of small contents floating in a big box. Needs [SizeMode.Exact] for the real size.
+ */
+@Composable
+private fun scale(w: Float, h: Float): Float {
+    val size = LocalSize.current
+    if (size.width.value <= 0f || size.height.value <= 0f) return 1f
+    return minOf(size.width.value / w, size.height.value / h).coerceIn(0.75f, 2.4f)
+}
+
+/** Ring pixels for a ring [dp] across: sharp, and capped so the widget stays under the binder size limit. */
+private fun ringPx(dp: Float): Int = (dp * 2.6f).toInt().coerceIn(160, 280)
 
 // ------------------------------------------------------------------------------------------ ring (square)
 
 class RingWidget : GlanceAppWidget() {
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val initial = load(context)
         provideContent {
@@ -288,13 +305,14 @@ class RingWidget : GlanceAppWidget() {
 @Composable
 private fun RingContent(d: WidgetData) {
     val c = d.colors
+    val k = scale(150f, 150f)
     Box(
         modifier = GlanceModifier.fillMaxSize().background(c.bg).cornerRadius(24.dp).padding(10.dp)
             .clickable(actionStartActivity<MainActivity>()),
         contentAlignment = Alignment.Center,
     ) {
         Image(
-            provider = ImageProvider(ringBitmap(d.progress, c)),
+            provider = ImageProvider(ringBitmap(d.progress, c, ringPx(130 * k))),
             contentDescription = "${Format.steps(d.steps)} of ${Format.steps(d.goal)} steps",
             // Fill the widget (keeping it round) instead of a fixed 120dp, which was clipped at the
             // 110dp minimum size once the 10dp padding is taken off.
@@ -304,9 +322,10 @@ private fun RingContent(d: WidgetData) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 Format.steps(d.steps),
-                style = TextStyle(color = ColorProvider(c.ink), fontSize = 20.sp, fontWeight = FontWeight.Bold),
+                style = style(c.ink, 20 * k, FontWeight.Bold),
+                maxLines = 1,
             )
-            Text("steps", style = TextStyle(color = ColorProvider(c.quiet), fontSize = 11.sp))
+            Text("steps", style = style(c.quiet, 11 * k), maxLines = 1)
         }
     }
 }
@@ -332,6 +351,7 @@ private fun StatsContent(d: WidgetData) {
     val size = LocalSize.current
     val tall = size.height >= 140.dp
     val wide = size.width >= 150.dp
+    val k = scale(150f, 150f)
     val innerWidth = (size.width.value - 24f).coerceAtLeast(40f)
     // About 3 px per dp, capped: at most 720 x 18 px (~52 KB).
     val barBitmap = progressBitmap(d.progress, c, (innerWidth * 3).toInt().coerceIn(120, 720), 18)
@@ -343,12 +363,12 @@ private fun StatsContent(d: WidgetData) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (tall) {
-            Text("Today", style = style(c.quiet, 11), maxLines = 1)
-            Spacer(GlanceModifier.height(2.dp))
+            Text("Today", style = style(c.quiet, 11 * k), maxLines = 1)
+            Spacer(GlanceModifier.height((2 * k).dp))
         }
         Text(
             Format.steps(d.steps),
-            style = style(c.ink, if (wide && tall) 30 else 24, FontWeight.Bold),
+            style = style(c.ink, (if (wide && tall) 30 else 24) * k, FontWeight.Bold),
             maxLines = 1,
         )
         Text(
@@ -358,20 +378,20 @@ private fun StatsContent(d: WidgetData) {
                 wide -> "of ${Format.steps(d.goal)} steps"
                 else -> "of ${Format.steps(d.goal)}"
             },
-            style = style(c.quiet, 11),
+            style = style(c.quiet, 11 * k),
             maxLines = 1,
         )
-        Spacer(GlanceModifier.height(if (tall) 10.dp else 6.dp))
+        Spacer(GlanceModifier.height(((if (tall) 10 else 6) * k).dp))
         Image(
             provider = ImageProvider(barBitmap),
             contentDescription = "${(d.progress * 100).toInt().coerceAtMost(999)}% of goal",
             contentScale = ContentScale.FillBounds,
-            modifier = GlanceModifier.fillMaxWidth().height(6.dp),
+            modifier = GlanceModifier.fillMaxWidth().height((6 * k).dp),
         )
-        Spacer(GlanceModifier.height(if (tall) 10.dp else 6.dp))
+        Spacer(GlanceModifier.height(((if (tall) 10 else 6) * k).dp))
         Text(
             if (wide) "$distance · $calories" else distance,
-            style = style(c.ink, 11, FontWeight.Medium),
+            style = style(c.ink, 11 * k, FontWeight.Medium),
             maxLines = 1,
         )
     }
@@ -396,6 +416,7 @@ private fun StreakContent(d: WidgetData) {
     val c = d.colors
     val size = LocalSize.current
     val tall = size.height >= 140.dp
+    val k = scale(150f, 150f)
     val status = when {
         d.goal <= 0 -> "No goal set"
         d.steps >= d.goal -> "Goal reached"
@@ -409,27 +430,27 @@ private fun StreakContent(d: WidgetData) {
             Image(
                 provider = ImageProvider(flameBitmap(c)),
                 contentDescription = null,
-                modifier = GlanceModifier.size(if (tall) 20.dp else 16.dp),
+                modifier = GlanceModifier.size(((if (tall) 20 else 16) * k).dp),
             )
-            Spacer(GlanceModifier.width(6.dp))
+            Spacer(GlanceModifier.width((6 * k).dp))
             Text(
                 d.streak.toString(),
-                style = style(c.ink, if (tall) 34 else 28, FontWeight.Bold),
+                style = style(c.ink, (if (tall) 34 else 28) * k, FontWeight.Bold),
                 maxLines = 1,
             )
         }
-        Text("day streak", style = style(c.quiet, 12), maxLines = 1)
+        Text("day streak", style = style(c.quiet, 12 * k), maxLines = 1)
         Spacer(GlanceModifier.defaultWeight())
         Text(
             status,
-            style = style(if (d.goal > 0 && d.steps >= d.goal) c.accent else c.ink, 11, FontWeight.Medium),
+            style = style(if (d.goal > 0 && d.steps >= d.goal) c.accent else c.ink, 11 * k, FontWeight.Medium),
             maxLines = 1,
         )
         if (tall) {
-            Spacer(GlanceModifier.height(2.dp))
+            Spacer(GlanceModifier.height((2 * k).dp))
             Text(
                 "Best ${d.bestStreak} ${if (d.bestStreak == 1) "day" else "days"}",
-                style = style(c.quiet, 10),
+                style = style(c.quiet, 10 * k),
                 maxLines = 1,
             )
         }
@@ -439,6 +460,8 @@ private fun StreakContent(d: WidgetData) {
 // ------------------------------------------------------------------------------------------ week (rectangle)
 
 class WeekWidget : GlanceAppWidget() {
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val initial = load(context)
         provideContent {
@@ -451,6 +474,9 @@ class WeekWidget : GlanceAppWidget() {
 @Composable
 private fun WeekContent(d: WidgetData) {
     val c = d.colors
+    val k = scale(320f, 150f)
+    val bar = 12 * k
+    val barHeight = 64 * k
     Row(
         modifier = GlanceModifier.fillMaxSize().background(c.bg).cornerRadius(24.dp).padding(14.dp)
             .clickable(actionStartActivity<MainActivity>()),
@@ -458,22 +484,19 @@ private fun WeekContent(d: WidgetData) {
     ) {
         Box(contentAlignment = Alignment.Center) {
             Image(
-                provider = ImageProvider(ringBitmap(d.progress, c)),
+                provider = ImageProvider(ringBitmap(d.progress, c, ringPx(92 * k))),
                 contentDescription = null,
-                modifier = GlanceModifier.size(92.dp),
+                modifier = GlanceModifier.size((92 * k).dp),
             )
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    Format.steps(d.steps),
-                    style = TextStyle(color = ColorProvider(c.ink), fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                )
-                Text("today", style = TextStyle(color = ColorProvider(c.quiet), fontSize = 10.sp))
+                Text(Format.steps(d.steps), style = style(c.ink, 16 * k, FontWeight.Bold), maxLines = 1)
+                Text("today", style = style(c.quiet, 10 * k), maxLines = 1)
             }
         }
-        Spacer(GlanceModifier.width(14.dp))
+        Spacer(GlanceModifier.width((14 * k).dp))
         Column(modifier = GlanceModifier.defaultWeight()) {
-            Text("Last 7 days", style = TextStyle(color = ColorProvider(c.quiet), fontSize = 11.sp))
-            Spacer(GlanceModifier.height(6.dp))
+            Text("Last 7 days", style = style(c.quiet, 11 * k), maxLines = 1)
+            Spacer(GlanceModifier.height((6 * k).dp))
             val max = maxOf(d.goal, d.week.maxOfOrNull { it.second } ?: 0, 1).toFloat()
             // A cell per day, its bar above its letter, so they line up at any widget width. The bars are
             // layout boxes rather than pictures, so they stay crisp and round however the widget is sized.
@@ -482,25 +505,25 @@ private fun WeekContent(d: WidgetData) {
                     val isToday = i == d.week.lastIndex
                     Column(modifier = GlanceModifier.defaultWeight(), horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(
-                            modifier = GlanceModifier.width(12.dp).height(64.dp).background(c.track).cornerRadius(6.dp),
+                            modifier = GlanceModifier.width(bar.dp).height(barHeight.dp).background(c.track).cornerRadius((bar / 2).dp),
                             contentAlignment = Alignment.BottomCenter,
                         ) {
                             if (steps > 0) {
-                                val fill = (64 * (steps / max)).coerceIn(12f, 64f)
+                                val fill = (barHeight * (steps / max)).coerceIn(bar, barHeight)
                                 Box(
-                                    modifier = GlanceModifier.width(12.dp).height(fill.dp).cornerRadius(6.dp)
+                                    modifier = GlanceModifier.width(bar.dp).height(fill.dp).cornerRadius((bar / 2).dp)
                                         .background(if (d.goal > 0 && steps >= d.goal) c.accent else c.quiet),
                                 ) {}
                             }
                         }
-                        Spacer(GlanceModifier.height(4.dp))
+                        Spacer(GlanceModifier.height((4 * k).dp))
                         Text(
                             label,
-                            style = TextStyle(
-                                color = ColorProvider(if (isToday) c.ink else c.quiet), fontSize = 10.sp,
-                                fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                                textAlign = TextAlign.Center,
+                            style = style(
+                                if (isToday) c.ink else c.quiet, 10 * k,
+                                if (isToday) FontWeight.Bold else FontWeight.Normal, TextAlign.Center,
                             ),
+                            maxLines = 1,
                         )
                     }
                 }
@@ -512,6 +535,8 @@ private fun WeekContent(d: WidgetData) {
 // ------------------------------------------------------------------------------------------ today (rectangle)
 
 class TodayWidget : GlanceAppWidget() {
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val initial = load(context)
         provideContent {
@@ -524,6 +549,7 @@ class TodayWidget : GlanceAppWidget() {
 @Composable
 private fun TodayContent(d: WidgetData) {
     val c = d.colors
+    val k = scale(320f, 150f)
     Row(
         modifier = GlanceModifier.fillMaxSize().background(c.bg).cornerRadius(24.dp).padding(14.dp)
             .clickable(actionStartActivity<MainActivity>()),
@@ -532,37 +558,39 @@ private fun TodayContent(d: WidgetData) {
         // 82dp: the height left at the 110dp minimum once the padding is taken off.
         Box(contentAlignment = Alignment.Center) {
             Image(
-                provider = ImageProvider(ringBitmap(d.progress, c)),
+                provider = ImageProvider(ringBitmap(d.progress, c, ringPx(82 * k))),
                 contentDescription = "${Format.steps(d.steps)} of ${Format.steps(d.goal)} steps",
-                modifier = GlanceModifier.size(82.dp),
+                modifier = GlanceModifier.size((82 * k).dp),
             )
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(Format.steps(d.steps), style = style(c.ink, 15, FontWeight.Bold), maxLines = 1)
-                Text("steps", style = style(c.quiet, 10), maxLines = 1)
+                Text(Format.steps(d.steps), style = style(c.ink, 15 * k, FontWeight.Bold), maxLines = 1)
+                Text("steps", style = style(c.quiet, 10 * k), maxLines = 1)
             }
         }
-        Spacer(GlanceModifier.width(16.dp))
+        Spacer(GlanceModifier.width((16 * k).dp))
         Column(modifier = GlanceModifier.defaultWeight()) {
-            StatRow("Distance", Format.distance(d.distanceMeters, d.units), c)
-            Spacer(GlanceModifier.height(8.dp))
-            StatRow("Active", Format.minutes(d.activeMinutes), c)
-            Spacer(GlanceModifier.height(8.dp))
-            StatRow("Calories", "${Format.steps(d.calories)} kcal", c)
+            StatRow("Distance", Format.distance(d.distanceMeters, d.units), c, k)
+            Spacer(GlanceModifier.height((8 * k).dp))
+            StatRow("Active", Format.minutes(d.activeMinutes), c, k)
+            Spacer(GlanceModifier.height((8 * k).dp))
+            StatRow("Calories", "${Format.steps(d.calories)} kcal", c, k)
         }
     }
 }
 
 @Composable
-private fun StatRow(label: String, value: String, c: WidgetColors) {
+private fun StatRow(label: String, value: String, c: WidgetColors, k: Float) {
     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = GlanceModifier.defaultWeight(), style = style(c.quiet, 12), maxLines = 1)
-        Text(value, style = style(c.ink, 13, FontWeight.Medium, TextAlign.End), maxLines = 1)
+        Text(label, modifier = GlanceModifier.defaultWeight(), style = style(c.quiet, 12 * k), maxLines = 1)
+        Text(value, style = style(c.ink, 13 * k, FontWeight.Medium, TextAlign.End), maxLines = 1)
     }
 }
 
 // ------------------------------------------------------------------------------------------ hourly (rectangle)
 
 class HourlyWidget : GlanceAppWidget() {
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val initial = load(context)
         provideContent {
@@ -575,22 +603,23 @@ class HourlyWidget : GlanceAppWidget() {
 @Composable
 private fun HourlyContent(d: WidgetData) {
     val c = d.colors
+    val k = scale(320f, 150f)
     Column(
         modifier = GlanceModifier.fillMaxSize().background(c.bg).cornerRadius(24.dp).padding(14.dp)
             .clickable(actionStartActivity<MainActivity>()),
     ) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            Text(Format.steps(d.steps), style = style(c.ink, 18, FontWeight.Bold), maxLines = 1)
-            Spacer(GlanceModifier.width(5.dp))
+            Text(Format.steps(d.steps), style = style(c.ink, 18 * k, FontWeight.Bold), maxLines = 1)
+            Spacer(GlanceModifier.width((5 * k).dp))
             Text(
                 if (d.goal > 0) "of ${Format.steps(d.goal)}" else "steps",
-                style = style(c.quiet, 11),
+                style = style(c.quiet, 11 * k),
                 maxLines = 1,
             )
             Spacer(GlanceModifier.defaultWeight())
-            Text("Today by hour", style = style(c.quiet, 11), maxLines = 1)
+            Text("Today by hour", style = style(c.quiet, 11 * k), maxLines = 1)
         }
-        Spacer(GlanceModifier.height(8.dp))
+        Spacer(GlanceModifier.height((8 * k).dp))
         // 480 x 100 px (~190 KB), stretched to the space left; the small corner radius hides the stretch.
         Image(
             provider = ImageProvider(barsBitmap(d.hourly, 0, c, w = 480, h = 100, gapRatio = 0.35f, hourly = true)),
@@ -598,11 +627,11 @@ private fun HourlyContent(d: WidgetData) {
             contentScale = ContentScale.FillBounds,
             modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
         )
-        Spacer(GlanceModifier.height(4.dp))
+        Spacer(GlanceModifier.height((4 * k).dp))
         // Each label starts a quarter of the way along, under the first bar of 00, 06, 12 and 18.
         Row(modifier = GlanceModifier.fillMaxWidth()) {
             listOf("00", "06", "12", "18").forEach { label ->
-                Text(label, modifier = GlanceModifier.defaultWeight(), style = style(c.quiet, 10), maxLines = 1)
+                Text(label, modifier = GlanceModifier.defaultWeight(), style = style(c.quiet, 10 * k), maxLines = 1)
             }
         }
     }
