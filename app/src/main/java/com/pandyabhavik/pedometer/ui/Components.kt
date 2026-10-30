@@ -91,6 +91,7 @@ fun DayRing(
         val clear = minOf(maxWidth, maxHeight) * 0.55f
         val chars = Format.steps(maxOf(steps, goal)).length.coerceAtLeast(1)
         val fitted = with(density) { (clear / (chars * 0.5f)).toSp() }
+        val roomy = minOf(maxWidth, maxHeight) >= 190.dp
         val number = if (numberStyle.fontSize.isSp && fitted < numberStyle.fontSize) {
             numberStyle.copy(fontSize = fitted, lineHeight = fitted * 1.15f)
         } else numberStyle
@@ -136,6 +137,8 @@ fun DayRing(
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
             )
+            // A small ring (onboarding) has no room inside the dial for the goal and percent lines.
+            if (!roomy) return@Column
             Text(
                 if (goal > 0) "of ${Format.steps(goal)} steps" else "steps",
                 style = MaterialTheme.typography.bodyMedium,
