@@ -19,7 +19,7 @@ object Slots {
     fun dayStart(day: LocalDate, zone: ZoneId): Long = day.atStartOfDay(zone).toInstant().toEpochMilli()
 
     /** Slots covering [day], in order. Handles 23- and 25-hour days around clock changes. */
-    fun slotsOfDay(day: LocalDate, zone: ZoneId): LongRange {
+    fun slotsOfDay(day: LocalDate, zone: ZoneId): LongProgression {
         val start = dayStart(day, zone)
         val end = dayStart(day.plusDays(1), zone)
         return start until end step MILLIS

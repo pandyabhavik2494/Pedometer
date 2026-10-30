@@ -21,13 +21,12 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Unit tests (merging, dedupe, Health Connect write filter, reboots, streaks)
-        run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest
-
-      - name: Build the app
+      # Unit tests (merging, dedupe, Health Connect write filter, reboots, streaks) and the app build.
+      # --continue reports every compile error and test failure in one run.
+      - name: Unit tests and build
         env:
           PEDOMETER_VERSION_CODE: ${{ github.run_number }}
-        run: ./gradlew --no-daemon assembleRelease
+        run: ./gradlew --no-daemon --continue :core:test assembleRelease assembleDebugAndroidTest
 
       # Signed with this machine's throwaway debug key; the copy that gets installed is re-signed
       # with Pedometer's own key in the cloud session.
@@ -36,7 +35,7 @@ jobs:
 
       - name: Bundle the unit test report
         if: always()
-        run: zip -qr unit-tests.zip core/build/reports/tests app/build/reports/tests || true
+        run: zip -qr unit-tests.zip core/build/reports/tests || true
 
       - uses: actions/upload-artifact@v4
         with:
