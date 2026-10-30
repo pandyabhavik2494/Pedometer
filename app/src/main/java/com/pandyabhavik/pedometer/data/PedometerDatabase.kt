@@ -9,7 +9,8 @@ import androidx.room.RoomDatabase
         MergedSlot::class, DaySummary::class, WrittenRecord::class, EarnedBadge::class, KnownSource::class,
     ],
     version = 1,
-    exportSchema = true,
+    // The debug and release builds run Room in parallel and raced writing the same schema file.
+    exportSchema = false,
 )
 abstract class PedometerDatabase : RoomDatabase() {
     abstract fun steps(): StepDao
