@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -72,6 +73,8 @@ class StepService : Service(), SensorEventListener {
     private val readings = Channel<CounterReading>(Channel.UNLIMITED)
     private var recomputeScheduled = false
     private var started = false
+    /** The night-mode bits last seen, so a light/dark switch redraws the widgets in the new colours. */
+    private var nightMode = -1
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -138,6 +141,14 @@ class StepService : Service(), SensorEventListener {
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val night = newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        // Before the first change the old mode is unknown (-1); one extra redraw then is harmless.
+        if (night != nightMode) Widgets.refresh(this, force = true)
+        nightMode = night
+    }
 
     // Not cancelled half way when the service stops. The checkpoint is saved before the steps are added:
     // if the app dies between the two writes a batch is lost, rather than counted again on restart.

@@ -2,8 +2,16 @@
 <resources>
     <string name="app_name">Pedometer</string>
     <string name="privacy_title">Privacy policy</string>
-    <string name="widget_ring">Today\'s steps</string>
-    <string name="widget_week">Today and this week</string>
-    <string name="widget_ring_description">Today\'s steps as a ring</string>
-    <string name="widget_week_description">Today\'s steps and the last 7 days</string>
+    <string name="widget_ring">Steps ring</string>
+    <string name="widget_week">This week</string>
+    <string name="widget_stats">Steps and distance</string>
+    <string name="widget_streak">Streak</string>
+    <string name="widget_today">Today at a glance</string>
+    <string name="widget_hourly">Today by hour</string>
+    <string name="widget_ring_description">Today\'s steps as a ring around your goal</string>
+    <string name="widget_week_description">Today\'s ring and the last 7 days</string>
+    <string name="widget_stats_description">Today\'s steps, progress to your goal, distance and calories</string>
+    <string name="widget_streak_description">Days in a row you reached your goal, and what\'s left today</string>
+    <string name="widget_today_description">Today\'s ring with distance, active time and calories</string>
+    <string name="widget_hourly_description">Today\'s steps hour by hour</string>
 </resources>

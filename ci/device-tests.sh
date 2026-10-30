@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs inside the emulator job: smoke-tests the release APK the way a person would (install,
-# open, no crash), then runs the screen tests at one of the Fold's screen sizes.
+# open, no crash), then runs the screen and widget tests at one of the Fold's screen sizes.
 set -uo pipefail
 apk="$1"
 results="$2"
@@ -50,7 +50,10 @@ fi
 adb logcat -d > "$results/logcat-release.txt"
 adb uninstall $pkg >/dev/null || true
 
-echo "== Screen tests ($screen) =="
+# ScreensTest walks the app; WidgetsTest hosts every home-screen widget itself and screenshots them
+# (30-32-widgets-*). The widget bind grant it needs is given from inside the test: Gradle installs the
+# app afresh here (it was uninstalled above), so a grant from this script would have nothing to stick to.
+echo "== Screen and widget tests ($screen) =="
 adb logcat -c
 adb shell rm -rf /sdcard/Download/pedometer-screens
 if ! ./gradlew --no-daemon connectedDebugAndroidTest; then status=1; fi
