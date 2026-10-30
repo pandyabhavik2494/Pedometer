@@ -1,0 +1,110 @@
+name: Build Pedometer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests (merging, dedupe, Health Connect write filter, reboots, streaks)
+        run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest
+
+      - name: Build the app
+        env:
+          PEDOMETER_VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew --no-daemon assembleRelease
+
+      # Signed with this machine's throwaway debug key; the copy that gets installed is re-signed
+      # with Pedometer's own key in the cloud session.
+      - name: Name the app file
+        run: cp app/build/outputs/apk/release/app-release.apk Pedometer-ci.apk
+
+      - name: Bundle the unit test report
+        if: always()
+        run: zip -qr unit-tests.zip core/build/reports/tests app/build/reports/tests || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: Pedometer-ci.apk
+
+      - name: Publish the build
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Pedometer (build ${{ github.run_number }})
+          target_commitish: ${{ github.sha }}
+          body: "Build output for re-signing. Not for installing directly."
+          files: |
+            Pedometer-ci.apk
+            unit-tests.zip
+          prerelease: true
+
+  # On an emulator: launch the real release APK, then walk every screen with test data and save
+  # screenshots, at the Fold's cover-screen size and its inner-screen size.
+  device-tests:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        screen: [cover-screen, inner-screen]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: ${{ runner.temp }}/apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disk-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash ci/device-tests.sh "${{ runner.temp }}/apk/Pedometer-ci.apk" "${{ runner.temp }}/results" ${{ matrix.screen }}
+
+      - name: Bundle the results
+        if: always()
+        run: cd "${{ runner.temp }}" && zip -qr test-results-${{ matrix.screen }}.zip results
+
+      - name: Publish the results
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          files: ${{ runner.temp }}/test-results-${{ matrix.screen }}.zip
+          prerelease: true
