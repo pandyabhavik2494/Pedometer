@@ -51,7 +51,14 @@ class ScreensTest {
 
     @get:Rule
     val rules: RuleChain = RuleChain
-        .outerRule(GrantPermissionRule.grant(Manifest.permission.ACTIVITY_RECOGNITION, Manifest.permission.POST_NOTIFICATIONS))
+        .outerRule(
+            // POST_NOTIFICATIONS only exists from API 33; granting it on 30-32 makes the rule fail.
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                GrantPermissionRule.grant(Manifest.permission.ACTIVITY_RECOGNITION, Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                GrantPermissionRule.grant(Manifest.permission.ACTIVITY_RECOGNITION)
+            },
+        )
         .around(seed)
         .around(compose)
 
@@ -111,6 +118,11 @@ class ScreensTest {
         return if (dm.widthPixels / dm.density >= 600) "inner" else "cover"
     }
 
+    /** Settings arrive from DataStore asynchronously (the app shows nothing until they do), which Compose doesn't wait for. */
+    private fun waitFor(matcher: androidx.compose.ui.test.SemanticsMatcher) {
+        compose.waitUntil(10_000) { compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
+    }
+
     private fun tab(name: String) {
         compose.onNodeWithTag("nav-$name").performClick()
         compose.waitForIdle()
@@ -118,7 +130,7 @@ class ScreensTest {
 
     @Test
     fun everyScreen() {
-        compose.onNodeWithTag("today-ring").assertExists()
+        waitFor(hasTestTag("today-ring"))
         shot("01-today")
         if (size() == "cover") {
             compose.onNodeWithTag("sync-panel").assertExists()
@@ -162,7 +174,7 @@ class ScreensTest {
     @Test
     fun firstRun() {
         runBlocking { app.settings().update { it.copy(onboarded = false) } }
-        compose.onNodeWithText("Every step, counted once").assertExists()
+        waitFor(hasText("Every step, counted once"))
         shot("20-welcome")
         compose.onNodeWithTag("onboarding-action").performClick()
         shot("21-motion")
@@ -178,7 +190,7 @@ class ScreensTest {
         compose.onNodeWithTag("goal-value").assertExists()
         shot("23-goal")
         compose.onNodeWithTag("onboarding-action").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("today-ring")).fetchSemanticsNodes().isNotEmpty() }
+        waitFor(hasTestTag("today-ring"))
         shot("24-after-onboarding")
         assertTrue(runBlocking { app.settings().current().onboarded })
     }

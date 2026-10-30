@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.DirectionsRun
+import androidx.compose.material.icons.automirrored.outlined.DirectionsRun
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.Route
@@ -126,7 +126,7 @@ fun TodayScreen(main: MainViewModel, days: DaysViewModel, wide: Boolean, onFixHe
                     sessions.forEach { w ->
                         Spacer(Modifier.height(10.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.DirectionsRun, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.AutoMirrored.Outlined.DirectionsRun, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(8.dp))
                             val fmt = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
                             val zone = java.time.ZoneId.systemDefault()
@@ -188,7 +188,7 @@ fun TodayScreen(main: MainViewModel, days: DaysViewModel, wide: Boolean, onFixHe
 @Composable
 private fun Tiles(s: AppSettings, distance: Double, floors: Double, active: Int, calories: Long) {
     val (dValue, dUnit) = Format.distanceValue(distance, s.units)
-    val list = buildList {
+    val list = buildList<Triple<androidx.compose.ui.graphics.vector.ImageVector, String, Pair<String, String?>>> {
         add(Triple(Icons.Outlined.Route, "Distance", dValue to dUnit))
         if (floors > 0) add(Triple(Icons.Outlined.Stairs, "Floors", "%.0f".format(floors) to null))
         add(Triple(Icons.Outlined.Timer, "Active", Format.minutes(active) to null))

@@ -76,15 +76,15 @@ class SyncEngine @Inject constructor(
         // wearables can sync hours late.
         val firstDay: LocalDate = if (last == null) {
             val oldest = gateway.oldestSteps(Instant.ofEpochMilli(now).minusSeconds(10L * 365 * 86_400))
-            oldest?.atZone(zone)?.toLocalDate()?.coerceAtMost(today) ?: today.minusDays(30)
+            oldest?.atZone(zone)?.toLocalDate()?.let { if (it.isAfter(today)) today else it } ?: today.minusDays(30)
         } else {
-            Instant.ofEpochMilli(last).atZone(zone).toLocalDate().minusDays(2).coerceAtMost(today.minusDays(2))
+            Instant.ofEpochMilli(last).atZone(zone).toLocalDate().minusDays(2).let { if (it.isAfter(today.minusDays(2))) today.minusDays(2) else it }
         }
 
         // Read in 30-day pieces so a long history never has to fit in memory at once.
         var chunkStart = firstDay
         while (!chunkStart.isAfter(today)) {
-            val chunkEnd = minOf(chunkStart.plusDays(30), today.plusDays(1))
+            val chunkEnd = chunkStart.plusDays(30).let { if (it.isAfter(today.plusDays(1))) today.plusDays(1) else it }
             val from = chunkStart.atStartOfDay(zone).toInstant().toEpochMilli()
             val to = chunkEnd.atStartOfDay(zone).toInstant().toEpochMilli()
             val data = gateway.read(from, to, granted)

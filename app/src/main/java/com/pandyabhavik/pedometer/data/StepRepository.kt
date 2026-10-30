@@ -70,7 +70,7 @@ class StepRepository @Inject constructor(
             val s = settings.current()
             val roles = roles()
             val zone = zone()
-            days.toSortedSet().forEach { day -> recomputeDay(day, s, roles, zone) }
+            days.distinct().sortedBy { it.toEpochDay() }.forEach { day -> recomputeDay(day, s, roles, zone) }
         }
     }
 

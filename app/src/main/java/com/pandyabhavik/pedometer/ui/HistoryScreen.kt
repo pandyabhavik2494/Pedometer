@@ -163,7 +163,7 @@ fun HistoryScreen(main: MainViewModel, daysVm: DaysViewModel, wide: Boolean) {
     var period by rememberSaveable { mutableStateOf(Period.WEEK) }
     var selectedDay by rememberSaveable { mutableStateOf<String?>(null) }
     var jumpTo by remember { mutableStateOf(0) }
-    val earliest = days.keys.minOrNull() ?: today
+    val earliest = days.keys.minByOrNull { it.toEpochDay() } ?: today
 
     val list: @Composable (Modifier) -> Unit = { m ->
         Column(m.verticalScroll(rememberScrollState()).padding(horizontal = if (wide) 0.dp else 20.dp, vertical = 16.dp)) {

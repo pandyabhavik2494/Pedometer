@@ -27,7 +27,7 @@ class MergeTest {
     }
 
     @Test fun `samsung health is ignored so phone steps are not counted twice`() {
-        val r = merge(SlotInput(phoneSteps = 300, sourceSteps = mapOf(samsung = 310)))
+        val r = merge(SlotInput(phoneSteps = 300, sourceSteps = mapOf(samsung to 310)))
         assertEquals(SlotResult(300, SlotResult.PHONE), r)
     }
 
