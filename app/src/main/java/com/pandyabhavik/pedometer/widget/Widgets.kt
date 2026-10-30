@@ -367,7 +367,7 @@ private fun StatsContent(d: WidgetData) {
         }
         Text(
             Format.steps(d.steps),
-            style = style(c.ink, (if (wide && tall) 28 else 24) * k, FontWeight.Bold),
+            style = style(c.ink, (if (wide && tall) 26 else 22) * k, FontWeight.Bold),
             maxLines = 1,
         )
         Text(
