@@ -364,11 +364,10 @@ private fun StatsContent(d: WidgetData) {
     ) {
         if (tall) {
             Text("Today", style = style(c.quiet, 11 * k), maxLines = 1)
-            Spacer(GlanceModifier.height((2 * k).dp))
         }
         Text(
             Format.steps(d.steps),
-            style = style(c.ink, (if (wide && tall) 30 else 24) * k, FontWeight.Bold),
+            style = style(c.ink, (if (wide && tall) 28 else 24) * k, FontWeight.Bold),
             maxLines = 1,
         )
         Text(
@@ -381,14 +380,14 @@ private fun StatsContent(d: WidgetData) {
             style = style(c.quiet, 11 * k),
             maxLines = 1,
         )
-        Spacer(GlanceModifier.height(((if (tall) 10 else 6) * k).dp))
+        Spacer(GlanceModifier.height((6 * k).dp))
         Image(
             provider = ImageProvider(barBitmap),
             contentDescription = "${(d.progress * 100).toInt().coerceAtMost(999)}% of goal",
             contentScale = ContentScale.FillBounds,
             modifier = GlanceModifier.fillMaxWidth().height((6 * k).dp),
         )
-        Spacer(GlanceModifier.height(((if (tall) 10 else 6) * k).dp))
+        Spacer(GlanceModifier.height((6 * k).dp))
         Text(
             if (wide) "$distance · $calories" else distance,
             style = style(c.ink, 11 * k, FontWeight.Medium),
