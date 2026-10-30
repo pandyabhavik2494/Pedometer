@@ -106,6 +106,10 @@ jobs:
         if: always()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
+          # A release of its own: adding files to the build's release from here was refused by GitHub
+          # ("Resource not accessible by integration") once that release existed.
+          tag_name: build-${{ github.run_number }}-${{ matrix.screen }}-${{ matrix.suite }}
+          name: Test results (build ${{ github.run_number }}, ${{ matrix.screen }}, ${{ matrix.suite }})
+          target_commitish: ${{ github.sha }}
           files: ${{ runner.temp }}/test-results-${{ matrix.screen }}-${{ matrix.suite }}.zip
           prerelease: true
