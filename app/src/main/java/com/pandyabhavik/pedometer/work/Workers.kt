@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -28,7 +29,9 @@ import com.pandyabhavik.pedometer.health.SyncEngine
 import com.pandyabhavik.pedometer.sensor.StepService
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
@@ -58,23 +61,35 @@ class ReminderWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val s = settings.current()
-        if (s.reminderOn) {
-            repository.recompute(setOf(repository.today()))
-            val steps = dao.day(repository.today().toString())?.steps ?: 0
-            val threshold = s.goal * s.reminderBelowPercent / 100
-            if (steps < threshold && steps < s.goal) {
-                val left = s.goal - steps
-                // About 100 steps a minute at an easy walk.
-                val minutes = (left / 100.0).roundToLong().coerceAtLeast(1)
-                Reminders.show(
-                    applicationContext,
-                    "${Format.steps(left)} steps to go",
-                    "About ${Format.minutes(minutes.toInt())} of walking gets you to ${Format.steps(s.goal)}.",
-                )
+        // Doze can hold the job for hours. Past midnight it would nag about a day that has only just begun.
+        val lateBy = LocalTime.now().let { it.hour * 60 + it.minute } - s.reminderMinuteOfDay
+        try {
+            if (s.reminderOn && lateBy in 0..MAX_LATE_MINUTES) {
+                repository.recompute(setOf(repository.today()))
+                val steps = dao.day(repository.today().toString())?.steps ?: 0
+                val threshold = s.goal * s.reminderBelowPercent / 100
+                if (steps < threshold && steps < s.goal) {
+                    val left = s.goal - steps
+                    // About 100 steps a minute at an easy walk.
+                    val minutes = (left / 100.0).roundToLong().coerceAtLeast(1)
+                    Reminders.show(
+                        applicationContext,
+                        "${Format.steps(left)} steps to go",
+                        "About ${Format.minutes(minutes.toInt())} of walking gets you to ${Format.steps(s.goal)}.",
+                    )
+                }
             }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            // A failed run would book no next evening, and reminders would stop until the app is opened.
+            Log.w("ReminderWorker", "Reminder failed", e)
         }
         Schedules.scheduleReminder(applicationContext, s.reminderMinuteOfDay, ExistingWorkPolicy.APPEND_OR_REPLACE)
         return Result.success()
+    }
+
+    private companion object {
+        const val MAX_LATE_MINUTES = 120
     }
 }
 

@@ -59,11 +59,17 @@ fun Onboarding(main: MainViewModel) {
     val context = LocalContext.current
     val health by main.health.collectAsStateWithLifecycle()
 
-    val activity = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { step++ }
-    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { step++ }
+    // Each result moves to the page after the one that asked, rather than step++: a double tap or a
+    // late result must not skip a page or run past the last one.
+    val last = 5
+    fun after(page: Int) {
+        step = maxOf(step, page + 1).coerceAtMost(last)
+    }
+    val activity = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { after(1) }
+    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { after(2) }
     val hc = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) {
         main.refreshHealth()
-        step++
+        after(3)
     }
 
     val pages = listOf<@Composable () -> Unit>(
@@ -71,7 +77,7 @@ fun Onboarding(main: MainViewModel) {
             Page(
                 "Every step, counted once",
                 "Pedometer counts steps with your phone and adds your Fitbit Air through Health Connect. Where both counted the same walk, it only counts it once.",
-                "Get started", { step++ },
+                "Get started", { after(0) },
             )
         },
         {
@@ -79,7 +85,7 @@ fun Onboarding(main: MainViewModel) {
                 "Motion",
                 "To count steps, the app needs permission to use your phone's step sensor. It only counts; it never tracks where you go.",
                 "Allow motion", { activity.launch(Manifest.permission.ACTIVITY_RECOGNITION) },
-                skip = { step++ },
+                skip = { after(1) },
             )
         },
         {
@@ -88,10 +94,10 @@ fun Onboarding(main: MainViewModel) {
                     "Notifications",
                     "A quiet notification shows today's steps while the app counts, and an evening nudge comes when you're behind. You can turn the nudge off in Settings.",
                     "Allow notifications", { notifications.launch(Manifest.permission.POST_NOTIFICATIONS) },
-                    skip = { step++ },
+                    skip = { after(2) },
                 )
             } else {
-                LaunchedEffect(Unit) { step++ }
+                LaunchedEffect(Unit) { after(2) }
             }
         },
         {
@@ -99,14 +105,22 @@ fun Onboarding(main: MainViewModel) {
                 HealthConnectStatus.AVAILABLE -> Page(
                     "Fitbit, through Health Connect",
                     "Allow reading steps, distance, floors, workouts and heart rate so your Fitbit Air's data counts, and writing steps so the phone's count reaches Google Health when the band isn't on. Turn on background access and past data too.",
-                    "Connect Health Connect", { hc.launch(HealthConnectGateway.ALL) },
-                    skip = { step++ },
+                    "Connect Health Connect", {
+                        // health.status starts as AVAILABLE until the first check finishes; launching the
+                        // permission contract without Health Connect throws ActivityNotFoundException.
+                        if (main.gateway.status() == HealthConnectStatus.AVAILABLE) {
+                            runCatching { hc.launch(HealthConnectGateway.ALL) }.onFailure { main.refreshHealth() }
+                        } else {
+                            main.refreshHealth()
+                        }
+                    },
+                    skip = { after(3) },
                 )
                 else -> Page(
                     "Health Connect isn't ready",
                     "Health Connect is how your Fitbit Air's steps reach this app. Install or update it, then come back. You can also skip this and use the phone's count only.",
                     "Get Health Connect", { runCatching { context.startActivity(main.gateway.installIntent()) } },
-                    skip = { step++ },
+                    skip = { after(3) },
                 )
             }
         },
@@ -120,9 +134,9 @@ fun Onboarding(main: MainViewModel) {
                             Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")),
                         )
                     }
-                    step++
+                    after(4)
                 },
-                skip = { step++ },
+                skip = { after(4) },
             )
         },
         {
@@ -143,6 +157,7 @@ fun Onboarding(main: MainViewModel) {
                         style = MaterialTheme.typography.displayMedium,
                         modifier = Modifier.width(200.dp).testTag("goal-value"),
                         textAlign = TextAlign.Center,
+                        maxLines = 1,
                     )
                     FilledTonalIconButton(onClick = { goal = (goal + 500).coerceAtMost(50_000) }, modifier = Modifier.size(52.dp)) {
                         Icon(Icons.Outlined.Add, "More")
@@ -158,7 +173,7 @@ fun Onboarding(main: MainViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             DayRing(
-                steps = (goal * (step + 1) / pages.size), goal = goal,
+                steps = (goal * (step.coerceIn(0, pages.size - 1) + 1) / pages.size), goal = goal,
                 hourly = List(24) { h -> if (h in 7..20) ((h * 37) % 9 + 2).toLong() else 0L },
                 currentHour = null,
                 modifier = Modifier.widthIn(max = 220.dp).fillMaxWidth(0.6f).aspectRatio(1f),

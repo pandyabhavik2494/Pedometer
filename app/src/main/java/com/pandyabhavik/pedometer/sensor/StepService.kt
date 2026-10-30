@@ -32,19 +32,24 @@ import com.pandyabhavik.pedometer.data.StepDao
 import com.pandyabhavik.pedometer.data.StepRepository
 import com.pandyabhavik.pedometer.widget.Widgets
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -59,9 +64,13 @@ class StepService : Service(), SensorEventListener {
     @Inject lateinit var repository: StepRepository
     @Inject lateinit var settings: SettingsStore
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // A failed database or settings write is logged, not an app crash.
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e -> Log.w(TAG, "Counting error", e) },
+    )
     private val lock = Mutex()
-    private var recomputeJob: Job? = null
+    private val readings = Channel<CounterReading>(Channel.UNLIMITED)
+    private var recomputeScheduled = false
     private var started = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -90,6 +99,18 @@ class StepService : Service(), SensorEventListener {
                 stopSelf()
                 return START_NOT_STICKY
             }
+            // One reading at a time, in the order the sensor sent them. Out of order, a lower count after a
+            // higher one looks like a reboot, and the steps between them are counted twice.
+            scope.launch {
+                for (reading in readings) {
+                    try {
+                        record(reading)
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        Log.w(TAG, "Could not record steps", e)
+                    }
+                }
+            }
             manager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL, BATCH_MICROS)
             watchToday()
         }
@@ -113,30 +134,41 @@ class StepService : Service(), SensorEventListener {
             bootCount = Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, 0),
             bootedAtMillis = now - SystemClock.elapsedRealtime(),
         )
-        scope.launch { record(reading) }
+        readings.trySend(reading)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
-    private suspend fun record(reading: CounterReading) = lock.withLock {
-        val step = StepCounterRules.advance(settings.checkpoint(), reading)
-        if (step.steps > 0) {
-            val slots = Slots.distribute(step.fromMillis, step.toMillis, step.steps)
-            dao.addPhoneSteps(slots)
-            scheduleRecompute(repository.daysOf(slots.keys))
+    // Not cancelled half way when the service stops. The checkpoint is saved before the steps are added:
+    // if the app dies between the two writes a batch is lost, rather than counted again on restart.
+    private suspend fun record(reading: CounterReading) = withContext(NonCancellable) {
+        lock.withLock {
+            val step = StepCounterRules.advance(settings.checkpoint(), reading)
+            settings.saveCheckpoint(step.checkpoint)
+            if (step.steps > 0) {
+                val slots = Slots.distribute(step.fromMillis, step.toMillis, step.steps)
+                dao.addPhoneSteps(slots)
+                scheduleRecompute(repository.daysOf(slots.keys))
+            }
         }
-        settings.saveCheckpoint(step.checkpoint)
     }
 
     private val pendingDays = HashSet<java.time.LocalDate>()
 
     /** Merging is cheap but not free: batch sensor updates into one recompute every few seconds. */
     private fun scheduleRecompute(days: Set<java.time.LocalDate>) {
-        synchronized(pendingDays) { pendingDays += days }
-        if (recomputeJob?.isActive == true) return
-        recomputeJob = scope.launch {
+        // Days that arrive while a recompute is already running get a recompute of their own.
+        synchronized(pendingDays) {
+            pendingDays += days
+            if (recomputeScheduled) return
+            recomputeScheduled = true
+        }
+        scope.launch {
             delay(3_000)
-            val todo = synchronized(pendingDays) { pendingDays.toSet().also { pendingDays.clear() } }
+            val todo = synchronized(pendingDays) {
+                recomputeScheduled = false
+                pendingDays.toSet().also { pendingDays.clear() }
+            }
             repository.recompute(todo)
             Widgets.refresh(this@StepService)
         }
@@ -147,6 +179,7 @@ class StepService : Service(), SensorEventListener {
         scope.launch {
             repository.todayFlow()
                 .flatMapLatest { today -> combine(dao.dayFlow(today.toString()), settings.settings) { day, s -> day?.steps to s.goal } }
+                .distinctUntilChanged()
                 .collectLatest { (steps, goal) ->
                     val manager = getSystemService(android.app.NotificationManager::class.java)
                     runCatching { manager.notify(Notifications.COUNTING_ID, notification(steps, goal)) }

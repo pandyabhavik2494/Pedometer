@@ -47,6 +47,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pandyabhavik.pedometer.PrivacyPolicyActivity
 import com.pandyabhavik.pedometer.core.Format
@@ -133,7 +134,12 @@ fun SettingsScreen(main: MainViewModel, wide: Boolean) {
                 }
                 Item("Health Connect", hcText) {
                     when (health.status) {
-                        HealthConnectStatus.AVAILABLE -> permissions.launch(HealthConnectGateway.ALL)
+                        // Status is re-checked on tap: the cached one can be stale (Health Connect uninstalled or
+                        // updated since), and launching the permission contract without it throws.
+                        HealthConnectStatus.AVAILABLE -> runCatching {
+                            if (main.gateway.status() == HealthConnectStatus.AVAILABLE) permissions.launch(HealthConnectGateway.ALL)
+                            else context.startActivity(main.gateway.installIntent())
+                        }.onFailure { main.refreshHealth() }
                         else -> runCatching { context.startActivity(main.gateway.installIntent()) }
                     }
                 }
@@ -160,7 +166,13 @@ fun SettingsScreen(main: MainViewModel, wide: Boolean) {
             }
             Group("Counting in the background") {
                 val pm = context.getSystemService(PowerManager::class.java)
-                val exempt = pm?.isIgnoringBatteryOptimizations(context.packageName) == true
+                fun check() = pm?.isIgnoringBatteryOptimizations(context.packageName) == true
+                // Re-read when coming back from the system dialog, or the row keeps saying "Optimised".
+                var exempt by remember { mutableStateOf(check()) }
+                LifecycleResumeEffect(Unit) {
+                    exempt = check()
+                    onPauseOrDispose { }
+                }
                 Item(
                     "Battery",
                     if (exempt) "Unrestricted. Counting won't be paused." else "Optimised. Tap to let the app count all day.",
@@ -173,7 +185,10 @@ fun SettingsScreen(main: MainViewModel, wide: Boolean) {
                 }
             }
             Group("Your data") {
-                Item("Export to CSV", "One row per day") { export.launch("steps-${LocalDate.now()}.csv") }
+                Item("Export to CSV", "One row per day") {
+                    runCatching { export.launch("steps-${LocalDate.now()}.csv") }
+                        .onFailure { Toast.makeText(context, "No app to save files with", Toast.LENGTH_SHORT).show() }
+                }
                 Item("Privacy policy", "What the app reads, writes and keeps") {
                     context.startActivity(Intent(context, PrivacyPolicyActivity::class.java))
                 }
@@ -183,7 +198,7 @@ fun SettingsScreen(main: MainViewModel, wide: Boolean) {
     }
 
     when (edit) {
-        Edit.GOAL -> NumberDialog("Daily goal", "steps", s.goal.toDouble(), 0, { edit = null }) { v ->
+        Edit.GOAL -> NumberDialog("Daily goal", "steps", s.goal.toDouble(), 0, { edit = null }, range = 500.0..100_000.0) { v ->
             v.roundToInt().takeIf { it in 500..100_000 }?.let { g -> main.update { it.copy(goal = g.toLong()) } }
         }
         Edit.UNITS -> ChoiceDialog("Units", Units.entries, s.units, ::unitsLabel, { edit = null }) { u -> main.update { it.copy(units = u) } }
@@ -193,6 +208,7 @@ fun SettingsScreen(main: MainViewModel, wide: Boolean) {
                 "Stride length", if (metric) "cm" else "in", if (metric) s.stride * 100 else s.stride / 0.0254, 0, { edit = null },
                 note = "Leave empty to estimate it from your height.",
                 allowEmpty = true,
+                range = if (metric) 30.0..150.0 else 12.0..59.0,
             ) { v ->
                 val meters = if (v <= 0) null else if (metric) v / 100 else v * 0.0254
                 if (meters == null || meters in 0.3..1.5) main.update { it.copy(strideMeters = meters) }
@@ -200,14 +216,20 @@ fun SettingsScreen(main: MainViewModel, wide: Boolean) {
         }
         Edit.HEIGHT -> {
             val metric = s.units == Units.METRIC
-            NumberDialog("Height", if (metric) "cm" else "in", s.heightCm?.let { if (metric) it else it / 2.54 } ?: 0.0, 0, { edit = null }, allowEmpty = true) { v ->
+            NumberDialog(
+                "Height", if (metric) "cm" else "in", s.heightCm?.let { if (metric) it else it / 2.54 } ?: 0.0, 0, { edit = null }, allowEmpty = true,
+                range = if (metric) 100.0..250.0 else 40.0..98.0,
+            ) { v ->
                 val cm = if (v <= 0) null else if (metric) v else v * 2.54
                 if (cm == null || cm in 100.0..250.0) main.update { it.copy(heightCm = cm) }
             }
         }
         Edit.WEIGHT -> {
             val metric = s.units == Units.METRIC
-            NumberDialog("Weight", if (metric) "kg" else "lb", s.weightKg?.let { if (metric) it else it / 0.453592 } ?: 0.0, 1, { edit = null }, allowEmpty = true) { v ->
+            NumberDialog(
+                "Weight", if (metric) "kg" else "lb", s.weightKg?.let { if (metric) it else it / 0.453592 } ?: 0.0, 1, { edit = null }, allowEmpty = true,
+                range = if (metric) 25.0..300.0 else 56.0..661.0,
+            ) { v ->
                 val kg = if (v <= 0) null else if (metric) v else v * 0.453592
                 if (kg == null || kg in 25.0..300.0) main.update { it.copy(weightKg = kg) }
             }
@@ -329,12 +351,16 @@ private fun NumberDialog(
     onDismiss: () -> Unit,
     note: String? = null,
     allowEmpty: Boolean = false,
+    /** Values outside it can't be saved (they used to be accepted by the button and then silently dropped). */
+    range: ClosedFloatingPointRange<Double>? = null,
     onSave: (Double) -> Unit,
 ) {
     val start = if (initial <= 0) "" else if (decimals == 0) initial.roundToInt().toString() else "%.${decimals}f".format(initial)
-    var text by remember { mutableStateOf(start) }
+    // Saveable: unfolding the phone recreates the activity, and the dialog (edit is saveable) came back with the typed text lost.
+    var text by rememberSaveable { mutableStateOf(start) }
     val value = text.replace(',', '.').toDoubleOrNull()
-    val valid = value != null && value > 0 || (allowEmpty && text.isBlank())
+    val inRange = value != null && (range == null || value in range)
+    val valid = value != null && value > 0 && inRange || (allowEmpty && text.isBlank())
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -349,6 +375,10 @@ private fun NumberDialog(
                     onValueChange = { text = it.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(7) },
                     suffix = { Text(unit) },
                     singleLine = true,
+                    isError = value != null && !inRange,
+                    supportingText = if (range != null) {
+                        { Text("From ${"%.0f".format(range.start)} to ${"%.0f".format(range.endInclusive)} $unit") }
+                    } else null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.testTag("number-field"),
                 )

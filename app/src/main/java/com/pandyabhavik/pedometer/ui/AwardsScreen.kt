@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -33,6 +35,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pandyabhavik.pedometer.core.Badge
@@ -55,14 +58,14 @@ fun AwardsScreen(days: DaysViewModel, wide: Boolean) {
     val hits = all.values.count { it.goal > 0 && it.steps >= it.goal }
 
     val summary: @Composable () -> Unit = {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Big("Current streak", "${streaks.current}", if (streaks.current == 1) "day" else "days", Modifier.weight(1f))
-            Big("Best streak", "${streaks.best}", if (streaks.best == 1) "day" else "days", Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+            Big("Current streak", "${streaks.current}", if (streaks.current == 1) "day" else "days", Modifier.weight(1f).fillMaxHeight())
+            Big("Best streak", "${streaks.best}", if (streaks.best == 1) "day" else "days", Modifier.weight(1f).fillMaxHeight())
         }
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Big("Goal days", "$hits", null, Modifier.weight(1f))
-            Big("Lifetime", compact(lifetime), "steps", Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+            Big("Goal days", "$hits", null, Modifier.weight(1f).fillMaxHeight())
+            Big("Lifetime", compact(lifetime), "steps", Modifier.weight(1f).fillMaxHeight())
         }
     }
     val calendar: @Composable () -> Unit = {
@@ -108,8 +111,9 @@ fun AwardsScreen(days: DaysViewModel, wide: Boolean) {
         SectionLabel("Badges · ${earned.size} of ${Badge.entries.size}")
         Spacer(Modifier.height(10.dp))
         Badge.entries.sortedBy { if (it.name in earnedAt) 0 else 1 }.chunked(columns).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {
-                row.forEach { BadgeCard(it, earnedAt[it.name], Modifier.weight(1f)) }
+            // Same height for both cards in a row, whatever their text wraps to.
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp).height(IntrinsicSize.Min)) {
+                row.forEach { BadgeCard(it, earnedAt[it.name], Modifier.weight(1f).fillMaxHeight()) }
                 repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
@@ -143,7 +147,8 @@ fun AwardsScreen(days: DaysViewModel, wide: Boolean) {
 }
 
 private fun compact(n: Long): String = when {
-    n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)
+    // From 999,950 up, "%.0fk" would print "1000k".
+    n >= 999_950 -> "%.1fM".format(n / 1_000_000.0)
     n >= 10_000 -> "%.0fk".format(n / 1_000.0)
     else -> Format.steps(n)
 }
@@ -151,13 +156,16 @@ private fun compact(n: Long): String = when {
 @Composable
 private fun Big(label: String, value: String, unit: String?, modifier: Modifier) {
     Panel(modifier, padding = 16.dp) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(value, style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = "tnum"))
+            Text(
+                value, style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = "tnum"), maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+            )
             if (unit != null) {
                 Spacer(Modifier.width(4.dp))
-                Text(unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
+                Text(unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, modifier = Modifier.padding(bottom = 4.dp))
             }
         }
     }

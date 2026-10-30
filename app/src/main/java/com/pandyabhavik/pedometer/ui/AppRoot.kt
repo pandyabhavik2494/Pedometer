@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DonutLarge
@@ -37,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -46,7 +46,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pandyabhavik.pedometer.sensor.StepService
 import com.pandyabhavik.pedometer.ui.theme.LocalPalette
@@ -93,7 +95,7 @@ fun AppRoot(main: MainViewModel, days: DaysViewModel) {
                                 selected = tab == t,
                                 onClick = { tab = t },
                                 icon = { Icon(if (tab == t) t.on else t.off, null) },
-                                label = { Text(t.label) },
+                                label = { Text(t.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 colors = NavigationRailItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer),
                                 modifier = Modifier.padding(vertical = 4.dp).testTag("nav-${t.name.lowercase()}"),
                             )
@@ -111,7 +113,7 @@ fun AppRoot(main: MainViewModel, days: DaysViewModel) {
                                     selected = tab == t,
                                     onClick = { tab = t },
                                     icon = { Icon(if (tab == t) t.on else t.off, null) },
-                                    label = { Text(t.label) },
+                                    label = { Text(t.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                     colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer),
                                     modifier = Modifier.testTag("nav-${t.name.lowercase()}"),
                                 )
@@ -119,7 +121,9 @@ fun AppRoot(main: MainViewModel, days: DaysViewModel) {
                         }
                     },
                 ) { padding ->
-                    Box(Modifier.fillMaxSize().padding(padding).statusBarsPadding()) { content() }
+                    // Scaffold's padding already includes the status bar (no top bar here); adding
+                    // statusBarsPadding on top of it doubled the gap above every screen.
+                    Box(Modifier.fillMaxSize().padding(padding)) { content() }
                 }
             }
         }
@@ -130,17 +134,26 @@ fun AppRoot(main: MainViewModel, days: DaysViewModel) {
 @Composable
 fun StatusBanners(main: MainViewModel) {
     val context = LocalContext.current
-    val permitted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) ==
+    fun check() = ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) ==
         PackageManager.PERMISSION_GRANTED
-    val sensor = StepService.hasSensor(context)
+    // Held as state so the banner goes away as soon as the permission is granted, here or in system settings.
+    var permitted by remember { mutableStateOf(check()) }
+    LifecycleResumeEffect(Unit) {
+        permitted = check()
+        onPauseOrDispose { }
+    }
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        permitted = granted || check()
+        main.onAppVisible()
+    }
+    val sensor = remember { StepService.hasSensor(context) }
     val message = when {
         !sensor -> "This device has no step sensor, so only Health Connect steps are shown."
         !permitted -> "Motion permission is off, so this phone isn't counting steps."
         else -> null
     } ?: return
-    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { main.onAppVisible() }
     Panel(Modifier.fillMaxWidth().testTag("status-banner"), padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(4.dp).height(36.dp).padding(end = 0.dp)) {

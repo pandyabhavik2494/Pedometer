@@ -7,6 +7,9 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,6 +30,7 @@ import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.ContentScale
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -44,6 +48,8 @@ import com.pandyabhavik.pedometer.data.ThemeMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -80,7 +86,20 @@ private suspend fun load(context: Context): WidgetData {
     return WidgetData(steps, s.goal, week, widgetColors(context, s.theme))
 }
 
-private fun ringBitmap(progress: Float, colors: WidgetColors, px: Int = 360): Bitmap {
+/**
+ * Fresh data whenever the day totals, the settings or the date change. Glance keeps a widget's session
+ * alive for a while after it draws, and an update() during that time only recomposes: data loaded once
+ * in provideGlance would be drawn again unchanged, so a refresh inside that window showed stale steps.
+ */
+private fun dataFlow(context: Context): Flow<WidgetData> {
+    val app = AppEntryPoint.get(context)
+    return combine(app.settings().settings, app.dao().allDaysFlow(), app.repository().todayFlow()) { _, _, _ -> load(context) }
+}
+
+// Bitmaps travel inside the RemoteViews in a binder transaction (1 MB for everything in flight). At
+// 360x360 plus 560x200 ARGB the week widget sent ~1 MB of pixels and could fail with
+// TransactionTooLargeException; these sizes are still sharp at the sizes they're shown.
+private fun ringBitmap(progress: Float, colors: WidgetColors, px: Int = 240): Bitmap {
     val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
     val stroke = px * 0.09f
@@ -100,7 +119,7 @@ private fun ringBitmap(progress: Float, colors: WidgetColors, px: Int = 360): Bi
     return bmp
 }
 
-private fun barsBitmap(values: List<Long>, goal: Long, colors: WidgetColors, w: Int = 560, h: Int = 200): Bitmap {
+private fun barsBitmap(values: List<Long>, goal: Long, colors: WidgetColors, w: Int = 420, h: Int = 150): Bitmap {
     val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
     val max = maxOf(goal, values.maxOrNull() ?: 0, 1).toFloat()
@@ -132,8 +151,11 @@ private fun Color.toArgb(): Int = android.graphics.Color.argb(
 
 class RingWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = load(context)
-        provideContent { RingContent(data) }
+        val initial = load(context)
+        provideContent {
+            val data by remember { dataFlow(context) }.collectAsState(initial)
+            RingContent(data)
+        }
     }
 }
 
@@ -148,7 +170,10 @@ private fun RingContent(d: WidgetData) {
         Image(
             provider = ImageProvider(ringBitmap(if (d.goal > 0) d.steps.toFloat() / d.goal else 0f, c)),
             contentDescription = "${Format.steps(d.steps)} of ${Format.steps(d.goal)} steps",
-            modifier = GlanceModifier.size(120.dp),
+            // Fill the widget (keeping it round) instead of a fixed 120dp, which was clipped at the
+            // 110dp minimum size once the 10dp padding is taken off.
+            contentScale = ContentScale.Fit,
+            modifier = GlanceModifier.fillMaxSize(),
         )
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
@@ -162,8 +187,11 @@ private fun RingContent(d: WidgetData) {
 
 class WeekWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = load(context)
-        provideContent { WeekContent(data) }
+        val initial = load(context)
+        provideContent {
+            val data by remember { dataFlow(context) }.collectAsState(initial)
+            WeekContent(data)
+        }
     }
 }
 

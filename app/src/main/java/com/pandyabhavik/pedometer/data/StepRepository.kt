@@ -41,7 +41,9 @@ class StepRepository @Inject constructor(
             val day = today()
             emit(day)
             val next = Slots.dayStart(day.plusDays(1), zone())
-            delay((next - System.currentTimeMillis()).coerceAtLeast(1_000) + 1_000)
+            // Checked again at least every minute: delay() stands still while the phone deep-sleeps, so one
+            // long wait could hold yesterday into the morning; the clock or time zone can also change.
+            delay((next - System.currentTimeMillis()).coerceIn(1_000, 60_000))
         }
     }.distinctUntilChanged()
 

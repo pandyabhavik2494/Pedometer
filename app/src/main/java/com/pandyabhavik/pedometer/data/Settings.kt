@@ -2,10 +2,12 @@ package com.pandyabhavik.pedometer.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -17,6 +19,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -47,7 +50,11 @@ data class AppSettings(
 
 data class SyncState(val lastSync: Long? = null, val lastError: String? = null)
 
-private val Context.store: DataStore<Preferences> by preferencesDataStore("settings")
+// A damaged settings file starts over instead of crashing every screen, the service and the workers.
+private val Context.store: DataStore<Preferences> by preferencesDataStore(
+    "settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 @Singleton
 class SettingsStore @Inject constructor(@ApplicationContext context: Context) {
@@ -73,6 +80,7 @@ class SettingsStore @Inject constructor(@ApplicationContext context: Context) {
         val cpCounter = longPreferencesKey("cp_counter")
         val cpAt = longPreferencesKey("cp_at")
         val cpBoot = intPreferencesKey("cp_boot")
+        val importedUntil = stringPreferencesKey("imported_until")
     }
 
     val settings: Flow<AppSettings> = store.data.map { currentFrom(it) }
@@ -124,6 +132,14 @@ class SettingsStore @Inject constructor(@ApplicationContext context: Context) {
             if (at != null) p[K.lastSync] = at
             if (error != null) p[K.lastError] = error else p.remove(K.lastError)
         }
+    }
+
+    /** How far an unfinished first import of Health Connect history got (exclusive), so it resumes there. */
+    suspend fun importedUntil(): LocalDate? =
+        store.data.first()[K.importedUntil]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+
+    suspend fun saveImportedUntil(day: LocalDate) {
+        store.edit { it[K.importedUntil] = day.toString() }
     }
 
     suspend fun checkpoint(): CounterCheckpoint? {

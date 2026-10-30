@@ -15,6 +15,7 @@ import com.pandyabhavik.pedometer.data.WrittenRecord
 import com.pandyabhavik.pedometer.widget.Widgets
 import com.pandyabhavik.pedometer.work.BadgeNotifier
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -45,6 +46,8 @@ class SyncEngine @Inject constructor(
         _running.value = true
         try {
             val result = runCatching { syncOnce() }
+            // A stopped worker or a closed screen is not a sync error.
+            (result.exceptionOrNull() as? CancellationException)?.let { throw it }
             result.exceptionOrNull()?.let { Log.w(TAG, "Sync failed", it) }
             val error = result.exceptionOrNull()?.let { describe(it) }
             settings.recordSync(if (result.isSuccess) System.currentTimeMillis() else null, error)
@@ -72,9 +75,14 @@ class SyncEngine @Inject constructor(
         val now = System.currentTimeMillis()
         val today = repository.today()
         val last = settings.sync.first().lastSync
+        // A first import of years of history can hit Health Connect's rate limits or the worker's time
+        // limit; it carries on from where it stopped instead of starting over (and failing) every time.
+        val resume = if (last == null) settings.importedUntil() else null
         // First sync imports everything Health Connect has; later syncs look back two days, because
         // wearables can sync hours late.
-        val firstDay: LocalDate = if (last == null) {
+        val firstDay: LocalDate = if (resume != null) {
+            minOf(resume, today.minusDays(2))
+        } else if (last == null) {
             val oldest = gateway.oldestSteps(Instant.ofEpochMilli(now).minusSeconds(10L * 365 * 86_400))
             oldest?.atZone(zone)?.toLocalDate()?.let { if (it.isAfter(today)) today else it } ?: today.minusDays(30)
         } else {
@@ -92,6 +100,7 @@ class SyncEngine @Inject constructor(
             dao.replaceHealthData(from, to, data.steps, data.heart, data.floors, data.sessions)
             val days = generateSequence(chunkStart) { it.plusDays(1) }.takeWhile { it.isBefore(chunkEnd) }.toList()
             repository.recompute(days)
+            if (last == null) settings.saveImportedUntil(chunkEnd)
             chunkStart = chunkEnd
         }
 

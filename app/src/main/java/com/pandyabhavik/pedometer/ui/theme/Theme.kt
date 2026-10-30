@@ -44,7 +44,8 @@ private val LightScheme = lightColorScheme(
     onPrimary = Color.White,
     primaryContainer = Color(0xFFD5EEEA),
     onPrimaryContainer = Color(0xFF06302C),
-    secondary = Amber,
+    // Amber itself is 2.5:1 on white; secondary is used for text (Health Connect problems), so a deeper amber.
+    secondary = Color(0xFF9A6200),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFF7E6C6),
     onSecondaryContainer = Color(0xFF3A2805),
@@ -142,6 +143,8 @@ private val GrayDark = darkColorScheme(
 /** Numbers line up in columns and don't jump as they count. */
 val Numerals = TextStyle(fontFeatureSettings = "tnum, lnum")
 
+private val AppTypography = typography()
+
 private fun typography(): Typography {
     val base = Typography()
     return base.copy(
@@ -174,12 +177,14 @@ fun PedometerTheme(mode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -
         else -> LightScheme
     }
     val palette = when {
-        gray && dark -> Palette(Color(0xFF262626), Color(0xFF2E2E2E), Color.White, Color.White, Color(0xFF222222), Color(0xFF555555), true, true)
-        gray -> Palette(Color(0xFFE6E6E6), Color(0xFFDDDDDD), Color.Black, Color.Black, Color(0xFFEAEAEA), Color(0xFFAAAAAA), true, false)
+        // Highlight is mid-grey, not the same as primary: the ring's second lap is drawn over the full first
+        // lap, and the chart's goal line over goal-reaching bars, so primary-on-primary was invisible.
+        gray && dark -> Palette(Color(0xFF262626), Color(0xFF2E2E2E), Color.White, Color(0xFF8C8C8C), Color(0xFF222222), Color(0xFF555555), true, true)
+        gray -> Palette(Color(0xFFE6E6E6), Color(0xFFDDDDDD), Color.Black, Color(0xFF7A7A7A), Color(0xFFEAEAEA), Color(0xFFAAAAAA), true, false)
         dark -> Palette(Color(0xFF232A29), Color(0xFF2B3332), TealLight, AmberLight, Color(0xFF222827), Color(0xFF4A5452), false, true)
         else -> Palette(Color(0xFFE3E6E2), Color(0xFFDCDAD3), Teal, Amber, Color(0xFFE6E3DC), Color(0xFFC4C0B6), false, false)
     }
     CompositionLocalProvider(LocalPalette provides palette) {
-        MaterialTheme(colorScheme = scheme, typography = typography(), content = content)
+        MaterialTheme(colorScheme = scheme, typography = AppTypography, content = content)
     }
 }

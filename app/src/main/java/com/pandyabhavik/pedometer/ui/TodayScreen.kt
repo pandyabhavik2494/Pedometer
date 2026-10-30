@@ -194,7 +194,9 @@ private fun Tiles(s: AppSettings, distance: Double, floors: Double, active: Int,
         add(Triple(Icons.Outlined.Timer, "Active", Format.minutes(active) to null))
         add(Triple(Icons.Outlined.Bolt, "Calories", Format.steps(calories) to "kcal"))
     }
-    val rows = if (list.size == 4) list.chunked(2) else listOf(list)
+    // Always two to a row: three across left ~83dp per value on the cover screen, so "1h 12m" was cut off.
+    // With three tiles the last one spans the row.
+    val rows = list.chunked(2)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         rows.forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -283,6 +285,7 @@ private fun SyncPanel(
 private fun SourceRow(name: String, recorded: Long, counted: Long) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(12.dp))
         Column(horizontalAlignment = Alignment.End) {
             Text("${Format.steps(counted)} counted", style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"))
             Text(

@@ -42,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pandyabhavik.pedometer.core.Format
@@ -183,12 +185,17 @@ fun HistoryScreen(main: MainViewModel, daysVm: DaysViewModel, wide: Boolean) {
                     }
                     val p = page(period, pageStart(pager.currentPage), today, days, goal)
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(p.title, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            p.title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        // Can wrap on the inner screen's half-width column (a year's total is long): keep it centred.
                         Text(
                             if (period == Period.DAY) "${Format.steps(p.total)} steps"
                             else "${Format.steps(p.average)} ${p.averageLabel} · ${Format.steps(p.total)} total",
                             style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                         )
                     }
                     IconButton(onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }, enabled = pager.currentPage > 0) {

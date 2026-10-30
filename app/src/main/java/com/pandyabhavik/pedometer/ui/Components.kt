@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +43,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -76,12 +79,21 @@ fun DayRing(
     LaunchedEffect(steps) { count.animateTo(steps.toFloat(), tween(900, easing = FastOutSlowInEasing)) }
     val maxHour = (hourly.maxOrNull() ?: 0).coerceAtLeast(1)
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier.semantics {
             contentDescription = "${Format.steps(steps)} steps of ${Format.steps(goal)}, ${(progress * 100).toInt()} percent"
         },
         contentAlignment = Alignment.Center,
     ) {
+        // The number has to fit inside the hour dial (about 55% of the ring across), whatever the ring's
+        // size and the font scale: shrink the style when the full-size number would run into the ticks.
+        val density = LocalDensity.current
+        val clear = minOf(maxWidth, maxHeight) * 0.55f
+        val chars = Format.steps(maxOf(steps, goal)).length.coerceAtLeast(1)
+        val fitted = with(density) { (clear / (chars * 0.5f)).toSp() }
+        val number = if (numberStyle.fontSize.isSp && fitted < numberStyle.fontSize) {
+            numberStyle.copy(fontSize = fitted, lineHeight = fitted * 1.15f)
+        } else numberStyle
         Canvas(Modifier.matchParentSize()) {
             val stroke = size.minDimension * 0.06f
             val inset = stroke / 2
@@ -120,7 +132,7 @@ fun DayRing(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 Format.steps(count.value.toLong()),
-                style = numberStyle,
+                style = number,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
             )
@@ -128,6 +140,7 @@ fun DayRing(
                 if (goal > 0) "of ${Format.steps(goal)} steps" else "steps",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
             if (goal > 0) {
                 Spacer(Modifier.height(6.dp))
@@ -136,6 +149,7 @@ fun DayRing(
                     if (pct >= 100) "Goal reached · $pct%" else "$pct%",
                     style = MaterialTheme.typography.labelLarge,
                     color = if (pct >= 100) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
                 )
             }
         }
@@ -175,10 +189,13 @@ fun StatTile(icon: ImageVector, label: String, value: String, unit: String?, mod
         }
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(value, style = MaterialTheme.typography.headlineSmall.copy(fontFeatureSettings = "tnum"), maxLines = 1)
+            Text(
+                value, style = MaterialTheme.typography.headlineSmall.copy(fontFeatureSettings = "tnum"), maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+            )
             if (unit != null) {
                 Spacer(Modifier.width(4.dp))
-                Text(unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 3.dp))
+                Text(unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, modifier = Modifier.padding(bottom = 3.dp))
             }
         }
     }
@@ -203,7 +220,15 @@ fun BarChart(
     val primary = MaterialTheme.colorScheme.primary
     val quiet = MaterialTheme.colorScheme.onSurfaceVariant
     val max = maxOf(values.maxOrNull() ?: 0, goal ?: 0, 1).toFloat()
-    val grown by animateFloatAsState(1f, tween(600), label = "bars")
+    // Bars grow in when the values change (a new period or page).
+    val growth = remember { Animatable(0f) }
+    LaunchedEffect(values) {
+        growth.snapTo(0f)
+        growth.animateTo(1f, tween(600, easing = FastOutSlowInEasing))
+    }
+    val grown = growth.value
+    // pointerInput below is keyed on the bar count only, so read the latest callback through state.
+    val currentOnSelect by rememberUpdatedState(onSelect)
     Column(modifier) {
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             Canvas(
@@ -213,7 +238,7 @@ fun BarChart(
                         if (onSelect != null && values.isNotEmpty()) Modifier.pointerInput(values.size) {
                             detectTapGestures { p ->
                                 val i = (p.x / size.width * values.size).toInt().coerceIn(0, values.size - 1)
-                                onSelect(i)
+                                currentOnSelect?.invoke(i)
                             }
                         } else Modifier,
                     ),
@@ -251,15 +276,19 @@ fun BarChart(
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth()) {
             labels.forEachIndexed { i, label ->
-                Text(
-                    if (i % labelEvery == 0) label else "",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = if (selected == i) MaterialTheme.colorScheme.onBackground else quiet,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    softWrap = false,
-                )
+                // A month has ~11dp per bar on the cover screen, narrower than "22": let the label run
+                // over its (empty) neighbours, centred on its bar, instead of being clipped.
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (i % labelEvery == 0) label else "",
+                        modifier = Modifier.wrapContentWidth(unbounded = true),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = if (selected == i) MaterialTheme.colorScheme.onBackground else quiet,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
             }
         }
     }
