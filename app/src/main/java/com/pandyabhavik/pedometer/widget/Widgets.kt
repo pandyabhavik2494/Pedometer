@@ -475,7 +475,8 @@ private fun WeekContent(d: WidgetData) {
     val c = d.colors
     val k = scale(320f, 150f)
     val bar = 12 * k
-    val barHeight = 64 * k
+    // Leaves room for the labels when the home screen uses larger text, as the Fold's inner screen does.
+    val barHeight = 54 * k
     Row(
         modifier = GlanceModifier.fillMaxSize().background(c.bg).cornerRadius(24.dp).padding(14.dp)
             .clickable(actionStartActivity<MainActivity>()),
