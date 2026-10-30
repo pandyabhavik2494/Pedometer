@@ -167,23 +167,27 @@ fun HistoryScreen(main: MainViewModel, daysVm: DaysViewModel, wide: Boolean) {
     var jumpTo by remember { mutableStateOf(0) }
     val earliest = days.keys.minByOrNull { it.toEpochDay() } ?: today
 
+    val count = pagesBack(period, earliest, today) + 1
+    val pager = key(period) { rememberPagerState(initialPage = jumpTo.coerceIn(0, count - 1)) { count } }
+    val scope = rememberCoroutineScope()
+    // Page 0 is the current period; swiping right goes back in time.
+    val pageStart = { i: Int -> startOf(period, shift(period, today, i)) }
+    // Read the page here, once, so the header, the day list and the day facts always show the same period.
+    val shownPage = pager.currentPage
+    val shown = page(period, pageStart(shownPage), today, days, goal)
+
     val list: @Composable (Modifier) -> Unit = { m ->
         Column(m.verticalScroll(rememberScrollState()).padding(horizontal = if (wide) 0.dp else 20.dp, vertical = 16.dp)) {
             Text("History", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(16.dp))
             PillToggle(Period.entries.map { it to it.label }, period, { jumpTo = 0; period = it }, Modifier.fillMaxWidth().testTag("period-toggle"))
             Spacer(Modifier.height(16.dp))
-            val count = pagesBack(period, earliest, today) + 1
-            val pager = key(period) { rememberPagerState(initialPage = jumpTo.coerceIn(0, count - 1)) { count } }
-            val scope = rememberCoroutineScope()
-            // Page 0 is the current period; swiping right goes back in time.
-            val pageStart = { i: Int -> startOf(period, shift(period, today, i)) }
             Panel(Modifier.fillMaxWidth(), padding = 14.dp) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }, enabled = pager.currentPage < count - 1) {
+                    IconButton(onClick = { scope.launch { pager.animateScrollToPage(shownPage + 1) } }, enabled = shownPage < count - 1) {
                         Icon(Icons.Outlined.ChevronLeft, "Earlier")
                     }
-                    val p = page(period, pageStart(pager.currentPage), today, days, goal)
+                    val p = shown
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             p.title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
@@ -198,7 +202,7 @@ fun HistoryScreen(main: MainViewModel, daysVm: DaysViewModel, wide: Boolean) {
                             textAlign = TextAlign.Center,
                         )
                     }
-                    IconButton(onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }, enabled = pager.currentPage > 0) {
+                    IconButton(onClick = { scope.launch { pager.animateScrollToPage(shownPage - 1) } }, enabled = shownPage > 0) {
                         Icon(Icons.Outlined.ChevronRight, "Later")
                     }
                 }
@@ -247,7 +251,7 @@ fun HistoryScreen(main: MainViewModel, daysVm: DaysViewModel, wide: Boolean) {
                     }
                 }
             }
-            val p = page(period, pageStart(pager.currentPage), today, days, goal)
+            val p = shown
             if (period == Period.DAY) {
                 Spacer(Modifier.height(16.dp))
                 val d = p.days.first()
