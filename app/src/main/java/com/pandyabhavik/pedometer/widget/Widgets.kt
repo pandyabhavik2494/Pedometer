@@ -230,32 +230,6 @@ private fun barsBitmap(
     return bmp
 }
 
-/**
- * One day's pill for the week widget, drawn per day so each pill sits in the same cell as its day letter
- * and the two always line up, whatever width the launcher gives the widget. The goal mark runs the full
- * cell width, so side by side the cells draw one dashed goal line.
- */
-private fun dayBarBitmap(value: Long, max: Float, goal: Long, colors: WidgetColors, w: Int = 36, h: Int = 128): Bitmap {
-    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-    val c = Canvas(bmp)
-    val bar = w * 0.6f
-    val x = (w - bar) / 2
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    paint.color = colors.track.toArgb()
-    c.drawRoundRect(RectF(x, 0f, x + bar, h.toFloat()), bar / 2, bar / 2, paint)
-    if (value > 0) {
-        val top = h - (h * (value / max)).coerceAtLeast(bar)
-        paint.color = (if (goal > 0 && value >= goal) colors.accent else colors.quiet).toArgb()
-        c.drawRoundRect(RectF(x, top, x + bar, h.toFloat()), bar / 2, bar / 2, paint)
-    }
-    if (goal > 0) {
-        val y = h - h * (goal / max)
-        paint.color = colors.ink.copy(alpha = 0.35f).toArgb()
-        c.drawRect(0f, y - 1f, w * 0.7f, y + 1f, paint)
-    }
-    return bmp
-}
-
 /** A slim rounded bar, [w] x [h] px, filled to [progress]. */
 private fun progressBitmap(progress: Float, colors: WidgetColors, w: Int, h: Int): Bitmap {
     val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -501,17 +475,24 @@ private fun WeekContent(d: WidgetData) {
             Text("Last 7 days", style = TextStyle(color = ColorProvider(c.quiet), fontSize = 11.sp))
             Spacer(GlanceModifier.height(6.dp))
             val max = maxOf(d.goal, d.week.maxOfOrNull { it.second } ?: 0, 1).toFloat()
-            // A cell per day, its pill above its letter, so they line up at any widget width.
+            // A cell per day, its bar above its letter, so they line up at any widget width. The bars are
+            // layout boxes rather than pictures, so they stay crisp and round however the widget is sized.
             Row(modifier = GlanceModifier.fillMaxWidth()) {
                 d.week.forEachIndexed { i, (label, steps) ->
                     val isToday = i == d.week.lastIndex
                     Column(modifier = GlanceModifier.defaultWeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Image(
-                            provider = ImageProvider(dayBarBitmap(steps, max, d.goal, c)),
-                            contentDescription = if (i == 0) "Steps for the last 7 days" else null,
-                            contentScale = ContentScale.FillBounds,
-                            modifier = GlanceModifier.fillMaxWidth().height(64.dp),
-                        )
+                        Box(
+                            modifier = GlanceModifier.width(12.dp).height(64.dp).background(c.track).cornerRadius(6.dp),
+                            contentAlignment = Alignment.BottomCenter,
+                        ) {
+                            if (steps > 0) {
+                                val fill = (64 * (steps / max)).coerceIn(12f, 64f)
+                                Box(
+                                    modifier = GlanceModifier.width(12.dp).height(fill.dp).cornerRadius(6.dp)
+                                        .background(if (d.goal > 0 && steps >= d.goal) c.accent else c.quiet),
+                                ) {}
+                            }
+                        }
                         Spacer(GlanceModifier.height(4.dp))
                         Text(
                             label,
