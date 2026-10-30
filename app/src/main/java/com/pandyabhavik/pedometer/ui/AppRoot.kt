@@ -50,7 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.pandyabhavik.pedometer.sensor.StepService
+import com.pandyabhavik.pedometer.sensor.StepReader
 import com.pandyabhavik.pedometer.ui.theme.LocalPalette
 
 enum class Tab(val label: String, val on: ImageVector, val off: ImageVector) {
@@ -148,7 +148,7 @@ fun StatusBanners(main: MainViewModel) {
         permitted = granted || check()
         main.onAppVisible()
     }
-    val sensor = remember { StepService.hasSensor(context) }
+    val sensor = remember { StepReader.hasSensor(context) }
     val message = when {
         !sensor -> "This device has no step sensor, so only Health Connect steps are shown."
         !permitted -> "Motion permission is off, so this phone isn't counting steps."

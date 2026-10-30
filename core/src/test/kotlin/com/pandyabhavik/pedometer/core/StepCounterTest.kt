@@ -36,6 +36,13 @@ class StepCounterTest {
         assertEquals(40L, r.steps)
     }
 
+    @Test fun `an older reading that arrives late is ignored, not taken for a reboot`() {
+        val prev = CounterCheckpoint(5_600, 20 * minute, 7)
+        val r = StepCounterRules.advance(prev, CounterReading(5_400, 15 * minute, 7, 0))
+        assertEquals(0L, r.steps)
+        assertEquals(prev, r.checkpoint)
+    }
+
     @Test fun `a reboot right after boot with no steps adds nothing`() {
         val prev = CounterCheckpoint(12_000, 0, 7)
         val r = StepCounterRules.advance(prev, CounterReading(0, 5 * minute, 8, 4 * minute))

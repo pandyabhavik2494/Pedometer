@@ -26,7 +26,8 @@ import com.pandyabhavik.pedometer.data.SettingsStore
 import com.pandyabhavik.pedometer.data.StepDao
 import com.pandyabhavik.pedometer.data.StepRepository
 import com.pandyabhavik.pedometer.health.SyncEngine
-import com.pandyabhavik.pedometer.sensor.StepService
+import com.pandyabhavik.pedometer.sensor.StepReader
+import com.pandyabhavik.pedometer.widget.Widgets
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -36,7 +37,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
 
-/** The periodic background sync. Also restarts step counting if One UI stopped it. */
+/** The periodic background sync. Reads the phone's counter first so write-back has the latest steps. */
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
     @Assisted context: Context,
@@ -44,8 +45,22 @@ class SyncWorker @AssistedInject constructor(
     private val engine: SyncEngine,
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        StepService.start(applicationContext)
+        StepReader.readNow(applicationContext)
         engine.sync()
+        return Result.success()
+    }
+}
+
+/** Every 15 minutes: picks up the steps the phone's step chip counted since the last read. */
+@HiltWorker
+class CountWorker @AssistedInject constructor(
+    @Assisted context: Context,
+    @Assisted params: WorkerParameters,
+) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        StepReader.readNow(applicationContext)
+        // Also catches a light/dark switch while the app was closed: widgets redraw in the new colours.
+        Widgets.refresh(applicationContext, force = true)
         return Result.success()
     }
 }
@@ -65,6 +80,7 @@ class ReminderWorker @AssistedInject constructor(
         val lateBy = LocalTime.now().let { it.hour * 60 + it.minute } - s.reminderMinuteOfDay
         try {
             if (s.reminderOn && lateBy in 0..MAX_LATE_MINUTES) {
+                StepReader.readNow(applicationContext)
                 repository.recompute(setOf(repository.today()))
                 val steps = dao.day(repository.today().toString())?.steps ?: 0
                 val threshold = s.goal * s.reminderBelowPercent / 100
@@ -138,6 +154,13 @@ object BadgeNotifier {
 object Schedules {
     private const val SYNC = "sync"
     private const val REMINDER = "reminder"
+    private const val COUNT = "count"
+
+    /** The 15-minute step read, the shortest period Android allows for background work. */
+    fun scheduleCounting(context: Context) {
+        val request = PeriodicWorkRequestBuilder<CountWorker>(15, TimeUnit.MINUTES).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(COUNT, ExistingPeriodicWorkPolicy.KEEP, request)
+    }
 
     fun scheduleSync(context: Context, minutes: Int, replace: Boolean = false) {
         val request = PeriodicWorkRequestBuilder<SyncWorker>(minutes.coerceAtLeast(15).toLong(), TimeUnit.MINUTES).build()

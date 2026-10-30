@@ -8,6 +8,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pandyabhavik.pedometer.data.ThemeMode
+import com.pandyabhavik.pedometer.sensor.StepReader
 import com.pandyabhavik.pedometer.ui.AppRoot
 import com.pandyabhavik.pedometer.ui.DaysViewModel
 import com.pandyabhavik.pedometer.ui.MainViewModel
@@ -22,6 +23,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lifecycle.addObserver(StepReader.Live(this))
         setContent {
             val settings by main.settings.collectAsStateWithLifecycle()
             PedometerTheme(settings?.theme ?: ThemeMode.SYSTEM) {

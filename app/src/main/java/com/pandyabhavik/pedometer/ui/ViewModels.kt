@@ -27,7 +27,7 @@ import com.pandyabhavik.pedometer.data.SyncState
 import com.pandyabhavik.pedometer.health.HealthConnectGateway
 import com.pandyabhavik.pedometer.health.HealthConnectStatus
 import com.pandyabhavik.pedometer.health.SyncEngine
-import com.pandyabhavik.pedometer.sensor.StepService
+import com.pandyabhavik.pedometer.sensor.StepReader
 import com.pandyabhavik.pedometer.widget.Widgets
 import com.pandyabhavik.pedometer.work.Schedules
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -96,14 +96,21 @@ class MainViewModel @Inject constructor(
     }
 
     fun syncNow() {
-        viewModelScope.launch { engine.sync() }
+        viewModelScope.launch {
+            StepReader.readNow(context)
+            engine.sync()
+        }
     }
 
-    /** After the screen opens: make sure counting runs and today is fresh. */
+    /** After the screen opens: read the step counter, make sure the 15-minute read is booked, freshen today. */
     fun onAppVisible() {
-        StepService.start(context)
         refreshHealth()
-        viewModelScope.launch { repository.recompute(setOf(repository.today())) }
+        viewModelScope.launch {
+            if (store.current().onboarded) Schedules.scheduleCounting(context)
+            StepReader.readNow(context)
+            repository.recompute(setOf(repository.today()))
+            Widgets.refresh(context, force = true)
+        }
     }
 
     fun update(change: (AppSettings) -> AppSettings) {
@@ -149,7 +156,8 @@ class MainViewModel @Inject constructor(
             val s = store.current()
             Schedules.scheduleSync(context, s.syncMinutes)
             Schedules.scheduleReminder(context, s.reminderMinuteOfDay, ExistingWorkPolicy.REPLACE)
-            StepService.start(context)
+            Schedules.scheduleCounting(context)
+            StepReader.readNow(context)
             engine.sync()
         }
     }

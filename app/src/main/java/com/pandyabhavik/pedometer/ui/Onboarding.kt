@@ -92,7 +92,7 @@ fun Onboarding(main: MainViewModel) {
             if (Build.VERSION.SDK_INT >= 33) {
                 Page(
                     "Notifications",
-                    "A quiet notification shows today's steps while the app counts, and an evening nudge comes when you're behind. You can turn the nudge off in Settings.",
+                    "An evening nudge comes when you're behind your goal, and a note when you earn a badge. You can turn the nudge off in Settings.",
                     "Allow notifications", { notifications.launch(Manifest.permission.POST_NOTIFICATIONS) },
                     skip = { after(2) },
                 )
@@ -127,7 +127,7 @@ fun Onboarding(main: MainViewModel) {
         {
             Page(
                 "Keep counting all day",
-                "Samsung phones pause apps to save battery. Let Pedometer run unrestricted so steps are counted even when you haven't opened it. It uses the low-power step chip, not GPS.",
+                "Samsung phones pause apps to save battery. Let Pedometer run unrestricted so it picks up your steps every 15 minutes, even when you haven't opened it. It reads the low-power step chip, not GPS.",
                 "Allow", {
                     runCatching {
                         context.startActivity(
